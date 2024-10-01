@@ -16,10 +16,11 @@ Session::Session(tcp::socket& socket, TransferFile& transfer) {
 
 void Session::session() {
     std::string aesKey;
+    std::vector<uint8_t> response;
     if(me.getExists()) {
         if(!loginClient())
             return;
-        std::vector<uint8_t> response = getResponse();
+        response = getResponse();
         if(response.empty())
             return;
         std::string privateKey = getPrivateKey();
@@ -34,7 +35,7 @@ void Session::session() {
     else {
         if(!registerClient())
             return;
-        std::vector<uint8_t> response = getResponse();
+        response = getResponse();
         if(response.empty())
             return;
         if(!me.createMeFile(transfer->getName(), response))
@@ -57,6 +58,12 @@ void Session::session() {
     }
     if(!sendFile(aesKey))
         return;
+    response = getResponse();
+    if(response.empty())
+        return;
+    // get CRC from response, little endian last 4 bytes of response
+    uint32_t CRC = response[response.size() - 4] | (response[response.size() - 3] << 8) | (response[response.size() - 2] << 16) | (response[response.size() - 1] << 24);
+    std::cout << "Received CRC from the server: " << CRC << std::endl;
 }
 
 std::vector<uint8_t> Session::getResponse() {
@@ -136,21 +143,27 @@ bool Session::sendFile(const std::string& aesKey) {
         std::cerr << "Error: file " << transfer->getFile() << " doesn't exist! Can't send file." << std::endl;
         return false;
     }
+
     std::ifstream file(transfer->getFile());
     if(!file.is_open()) {
         std::cerr << "Error: failed to open file " << transfer->getFile() << "! Can't send file." << std::endl;
         return false;
     }
+
     uintmax_t originalSize = std::filesystem::file_size(transfer->getFile());
     if(originalSize > std::numeric_limits<uint32_t>::max()) {
         std::cerr << "Error: file " << transfer->getFile() << " is too large (more than 4GB)! Can't send file." << std::endl;
         return false;
     }
+
     uint32_t encryptedSize = originalSize + 16 - (originalSize % 16);
     AESKey aes(reinterpret_cast<const unsigned char*>(aesKey.c_str()), aesKey.length());
+
     const size_t packetSize = 1024;
     std::vector<uint8_t> buffer(packetSize);
     uint16_t totalPackets = (encryptedSize + packetSize - 1) / packetSize;
+
+    std::cout << "Sending file " << transfer->getFile() << " to the server in " << totalPackets << " packets." << std::endl;
     for(uint16_t packet = 1; packet <= totalPackets; packet++) {
         file.read(reinterpret_cast<char*>(buffer.data()), packetSize);
         std::streamsize bytesRead = file.gcount();
@@ -163,6 +176,8 @@ bool Session::sendFile(const std::string& aesKey) {
             std::cerr << "Error: failed to send file " << transfer->getFile() << " to the server!" << std::endl;
             return false;
         }
+        std::cout << "Sent packet " << packet << " of " << totalPackets << " to the server." << std::endl;
     }
+    std::cout << "Finished sending file " << transfer->getFile() << " to the server." << std::endl;
     return true;
 }

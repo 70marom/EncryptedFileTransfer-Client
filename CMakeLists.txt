@@ -28,6 +28,7 @@ add_executable(client main.cpp
         Base64.h
         AESKey.cpp
         AESKey.h
+        cksum_new.cpp
 )
 
 target_link_libraries(client ${Boost_LIBRARIES} ws2_32 cryptopp::cryptopp)

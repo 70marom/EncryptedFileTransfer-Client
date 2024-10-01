@@ -14,6 +14,9 @@ bool processResponse(uint8_t* header) {
         case 1602:
             std::cout << "AES key has been received from server." << std::endl;
             return true;
+        case 1603:
+            std::cout << "CRC for sent file has been received from server." << std::endl;
+            return true;
         case 1605:
             std::cout << "Login in server is successful!" << std::endl;
             return true;
