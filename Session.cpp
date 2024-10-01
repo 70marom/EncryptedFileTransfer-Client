@@ -4,9 +4,9 @@
 #include "Session.h"
 #include "Request.h"
 #include "ProtocolHandler.h"
-#include "RSAWrapper.h"
-#include "AESWrapper.h"
-#include "Base64Wrapper.h"
+#include "RSAKeys.h"
+#include "AESKey.h"
+#include "Base64.h"
 #include "util.h"
 
 Session::Session(tcp::socket& socket, TransferFile& transfer) {
@@ -25,8 +25,8 @@ void Session::session() {
         std::string privateKey = getPrivateKey();
         if(privateKey.empty())
             return;
-        privateKey = Base64Wrapper::decode(privateKey);
-        RSAPrivateWrapper rsa(privateKey);
+        privateKey = Base64::decode(privateKey);
+        RSAKeys rsa(privateKey);
         std::string aesKeyEncrypted(response.begin() + 16, response.end());
         aesKey = rsa.decrypt(aesKeyEncrypted);
         std::cout << "Received AES key from the server and decrypted it." << std::endl;
@@ -39,9 +39,9 @@ void Session::session() {
             return;
         if(!me.createMeFile(transfer->getName(), response))
              return;
-        RSAPrivateWrapper rsa;
+        RSAKeys rsa;
         std::cout << "Generated RSA public and private keys." << std::endl;
-        std::string privateKeyBase64 = Base64Wrapper::encode(rsa.getPrivateKey());
+        std::string privateKeyBase64 = Base64::encode(rsa.getPrivateKey());
         if(!createPrivateKeyFile(privateKeyBase64))
             return;
         privateKeyBase64.erase(std::remove(privateKeyBase64.begin(), privateKeyBase64.end(), '\n'), privateKeyBase64.end());
@@ -147,7 +147,7 @@ bool Session::sendFile(const std::string& aesKey) {
         return false;
     }
     uint32_t encryptedSize = originalSize + 16 - (originalSize % 16);
-    AESWrapper aes(reinterpret_cast<const unsigned char*>(aesKey.c_str()), aesKey.length());
+    AESKey aes(reinterpret_cast<const unsigned char*>(aesKey.c_str()), aesKey.length());
     const size_t packetSize = 1024;
     std::vector<uint8_t> buffer(packetSize);
     uint16_t totalPackets = (encryptedSize + packetSize - 1) / packetSize;

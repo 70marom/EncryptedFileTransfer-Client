@@ -1,10 +1,8 @@
 #pragma once
 
 #include <string>
-#include <base64.h>
 
-
-class Base64Wrapper
+class Base64
 {
 public:
 	static std::string encode(const std::string& str);

@@ -1,42 +1,28 @@
-#include "AESWrapper.h"
+#include "AESKey.h"
 
 #include <modes.h>
 #include <aes.h>
 #include <filters.h>
-
 #include <stdexcept>
-#include <immintrin.h>	// _rdrand32_step
 
 
-unsigned char* AESWrapper::GenerateKey(unsigned char* buffer, unsigned int length)
-{
-	for (size_t i = 0; i < length; i += sizeof(unsigned int))
-		_rdrand32_step(reinterpret_cast<unsigned int*>(&buffer[i]));
-	return buffer;
-}
-
-AESWrapper::AESWrapper()
-{
-	GenerateKey(_key, DEFAULT_KEYLENGTH);
-}
-
-AESWrapper::AESWrapper(const unsigned char* key, unsigned int length)
+AESKey::AESKey(const unsigned char* key, unsigned int length)
 {
 	if (length != DEFAULT_KEYLENGTH)
 		throw std::length_error("key length must be 32 bytes");
 	memcpy_s(_key, DEFAULT_KEYLENGTH, key, length);
 }
 
-AESWrapper::~AESWrapper()
+AESKey::~AESKey()
 {
 }
 
-const unsigned char* AESWrapper::getKey() const 
+const unsigned char* AESKey::getKey() const
 { 
 	return _key; 
 }
 
-std::string AESWrapper::encrypt(const char* plain, unsigned int length)
+std::string AESKey::encrypt(const char* plain, unsigned int length)
 {
 	CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE] = { 0 };	// for practical use iv should never be a fixed value!
 
@@ -52,7 +38,7 @@ std::string AESWrapper::encrypt(const char* plain, unsigned int length)
 }
 
 
-std::string AESWrapper::decrypt(const char* cipher, unsigned int length)
+std::string AESKey::decrypt(const char* cipher, unsigned int length)
 {
 	CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE] = { 0 };	// for practical use iv should never be a fixed value!
 

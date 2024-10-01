@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.29)
 project(client)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
 
 set(BOOST_ROOT C:/Users/70mar/Desktop/boost_1_86_0)
 find_package(Boost REQUIRED)
@@ -21,14 +20,14 @@ add_executable(client main.cpp
         Request.h
         ProtocolHandler.cpp
         ProtocolHandler.h
-        RSAWrapper.h
-        RSAWrapper.cpp
+        RSAKeys.h
+        RSAKeys.cpp
         util.cpp
         util.h
-        Base64Wrapper.cpp
-        Base64Wrapper.h
-        AESWrapper.cpp
-        AESWrapper.h
+        Base64.cpp
+        Base64.h
+        AESKey.cpp
+        AESKey.h
 )
 
 target_link_libraries(client ${Boost_LIBRARIES} ws2_32 cryptopp::cryptopp)

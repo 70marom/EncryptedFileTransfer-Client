@@ -3,19 +3,16 @@
 #include <string>
 
 
-class AESWrapper
+class AESKey
 {
 public:
 	static const unsigned int DEFAULT_KEYLENGTH = 32;
 private:
 	unsigned char _key[DEFAULT_KEYLENGTH];
-	AESWrapper(const AESWrapper& aes);
+	AESKey(const AESKey& aes);
 public:
-	static unsigned char* GenerateKey(unsigned char* buffer, unsigned int length);
-
-	AESWrapper();
-	AESWrapper(const unsigned char* key, unsigned int size);
-	~AESWrapper();
+	AESKey(const unsigned char* key, unsigned int size);
+	~AESKey();
 
 	const unsigned char* getKey() const;
 
