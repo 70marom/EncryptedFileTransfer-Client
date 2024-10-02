@@ -1,11 +1,12 @@
+#include "cksum.h"
 #include <iostream>
 #include <fstream>
 #include <ostream>
 #include <cstdio>
-#include <vector>
 #include <iterator>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 
 uint_fast32_t const crctab[8][256] = {
@@ -445,13 +446,14 @@ uint_fast32_t const crctab[8][256] = {
 
 #define UNSIGNED(n) (n & 0xffffffff)
 
-unsigned long memcrc(char * b, size_t n) {
+unsigned long memcrc(const std::vector<uint8_t>& buffer) {
     unsigned int v = 0, c = 0;
     unsigned long s = 0;
     unsigned int tabidx;
+    unsigned int n = buffer.size();
     
     for (int i = 0; i < n; i++) {
-        tabidx = (s >> 24) ^ (unsigned char)b[i];
+        tabidx = (s >> 24) ^ buffer[i];
         s = UNSIGNED((s << 8)) ^ crctab[0][tabidx];
     }
     
@@ -461,24 +463,15 @@ unsigned long memcrc(char * b, size_t n) {
         s = UNSIGNED(s << 8) ^ crctab[0][(s >> 24) ^ c];
     }
     return (unsigned long)UNSIGNED(~s);
-
 }
 
-std::string readfile(std::string fname) {
-    if (std::filesystem::exists(fname)) {
-        std::filesystem::path fpath = fname;
-        std::ifstream f1(fname.c_str(), std::ios::binary);
-        
-        size_t size = std::filesystem::file_size(fpath);
-        char* b = new char[size];
-        f1.seekg(0, std::ios::beg);
-        f1.read(b, size);
-        std::cout << "tellg returns" << f1.tellg() << std::endl;
-        
-        return std::to_string(memcrc(b, size)) + '\t' + std::to_string(size) + '\t' + fname;
+unsigned long fileCRC(const std::string& fileName) {
+    std::ifstream file(fileName, std::ios::binary);
+    if(!file.is_open()) {
+        std::cerr << "Error: failed to open " << fileName << " in order to calculate CRC!" << std::endl;
+        return -1;
     }
-    else {
-        std::cerr << "Cannot open input file " << fname << std::endl;
-        return "";
-    }
+    std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    return memcrc(buffer);
 }

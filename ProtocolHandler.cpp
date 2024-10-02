@@ -17,6 +17,8 @@ bool processResponse(uint8_t* header) {
         case 1603:
             std::cout << "CRC for sent file has been received from server." << std::endl;
             return true;
+        case 1604:
+            return true;
         case 1605:
             std::cout << "Login in server is successful!" << std::endl;
             return true;
@@ -100,5 +102,44 @@ Request createSendFileRequest(const std::string& clientID, uint32_t contentSize,
 
     for(int i = 0; i < fileContent.length(); i++)
         payload.push_back(fileContent[i]);
+    return { clientIDarray, version, code, payload };
+}
+
+Request createCRCFailedRequest(const std::string& clientID, const std::string& fileName) {
+    uint8_t clientIDarray[16];
+    hexStringToByteArray(clientID, clientIDarray);
+    uint8_t version = 3;
+    uint16_t code = 901;
+    std::vector<uint8_t> payload;
+    for(int i = 0; i < fileName.length(); i++)
+        payload.push_back(fileName[i]);
+    for(int i = static_cast<int>(fileName.length()); i < 255; i++)
+        payload.push_back('\0');
+    return { clientIDarray, version, code, payload };
+}
+
+Request createFileTransferFailedRequest(const std::string& clientID, const std::string& fileName) {
+    uint8_t clientIDarray[16];
+    hexStringToByteArray(clientID, clientIDarray);
+    uint8_t version = 3;
+    uint16_t code = 902;
+    std::vector<uint8_t> payload;
+    for(int i = 0; i < fileName.length(); i++)
+        payload.push_back(fileName[i]);
+    for(int i = static_cast<int>(fileName.length()); i < 255; i++)
+        payload.push_back('\0');
+    return { clientIDarray, version, code, payload };
+}
+
+Request createFileTransferSucceededRequest(const std::string& clientID, const std::string& fileName) {
+    uint8_t clientIDarray[16];
+    hexStringToByteArray(clientID, clientIDarray);
+    uint8_t version = 3;
+    uint16_t code = 900;
+    std::vector<uint8_t> payload;
+    for(int i = 0; i < fileName.length(); i++)
+        payload.push_back(fileName[i]);
+    for(int i = static_cast<int>(fileName.length()); i < 255; i++)
+        payload.push_back('\0');
     return { clientIDarray, version, code, payload };
 }

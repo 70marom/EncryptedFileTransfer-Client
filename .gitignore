@@ -10,7 +10,6 @@
 .idea/
 cmake-build-debug/
 Cypto++Cmake/
-ex.txt
 me.info
 transfer.info
 priv.key

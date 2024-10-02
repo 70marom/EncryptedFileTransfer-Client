@@ -8,6 +8,7 @@
 #include "AESKey.h"
 #include "Base64.h"
 #include "util.h"
+#include "cksum.h"
 
 Session::Session(tcp::socket& socket, TransferFile& transfer) {
     this->socket = &socket;
@@ -62,8 +63,56 @@ void Session::session() {
     if(response.empty())
         return;
     // get CRC from response, little endian last 4 bytes of response
-    uint32_t CRC = response[response.size() - 4] | (response[response.size() - 3] << 8) | (response[response.size() - 2] << 16) | (response[response.size() - 1] << 24);
-    std::cout << "Received CRC from the server: " << CRC << std::endl;
+    uint32_t serverCRC = response[response.size() - 4] | (response[response.size() - 3] << 8) | (response[response.size() - 2] << 16) | (response[response.size() - 1] << 24);
+    unsigned long clientCRC = fileCRC(transfer->getFile());
+    if(clientCRC == -1)
+        return;
+    std::cout << "Server CRC: " << serverCRC << std::endl;
+    std::cout << "Client CRC: " << clientCRC << std::endl;
+    int tries = 0;
+    while(serverCRC != clientCRC) {
+        try {
+            createCRCFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
+        } catch(std::exception& e) {
+            std::cerr << "Error: failed to send CRC failed request to the server!" << std::endl;
+            return;
+        }
+        if(tries == 3) {
+            std::cerr << "Error: server's CRC doesn't match client's CRC after 3 tries! File transfer failed." << std::endl;
+            try {
+                createFileTransferFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
+            } catch(std::exception& e) {
+                std::cerr << "Error: failed to send file transfer failed request to the server!" << std::endl;
+                return;
+            }
+            response = getResponse();
+            if(response.empty())
+                return;
+            std::cout << "Server received file transfer failed. Disconnecting from server." << std::endl;
+            return;
+        }
+        std::cout << "Warning: server's CRC doesn't match client's CRC! Retrying file transfer." << std::endl;
+        if(!sendFile(aesKey))
+            return;
+        response = getResponse();
+        if(response.empty())
+            return;
+        serverCRC = response[response.size() - 4] | (response[response.size() - 3] << 8) | (response[response.size() - 2] << 16) | (response[response.size() - 1] << 24);
+        tries++;
+        std::cout << "Server CRC: " << serverCRC << std::endl;
+        std::cout << "Client CRC: " << clientCRC << std::endl;
+    }
+    std::cout << "Server's CRC matches client's CRC! File transfer succeeded." << std::endl;
+    try {
+        createFileTransferSucceededRequest(me.getClientID(), transfer->getFile()).send(*socket);
+    } catch(std::exception& e) {
+        std::cerr << "Error: failed to send file transfer succeeded message to the server!" << std::endl;
+        return;
+    }
+    response = getResponse();
+    if(response.empty())
+        return;
+    std::cout << "Server received confirmation of file transfer successful. Disconnecting from server." << std::endl;
 }
 
 std::vector<uint8_t> Session::getResponse() {
@@ -144,7 +193,7 @@ bool Session::sendFile(const std::string& aesKey) {
         return false;
     }
 
-    std::ifstream file(transfer->getFile());
+    std::ifstream file(transfer->getFile(), std::ios::binary);
     if(!file.is_open()) {
         std::cerr << "Error: failed to open file " << transfer->getFile() << "! Can't send file." << std::endl;
         return false;
@@ -167,8 +216,10 @@ bool Session::sendFile(const std::string& aesKey) {
     for(uint16_t packet = 1; packet <= totalPackets; packet++) {
         file.read(reinterpret_cast<char*>(buffer.data()), packetSize);
         std::streamsize bytesRead = file.gcount();
-        if (bytesRead < packetSize)
+        if (bytesRead < packetSize) {
             std::fill(buffer.begin() + bytesRead, buffer.end(), 0);  // Zero padding
+        }
+
         std::string encrypted = aes.encrypt(reinterpret_cast<const char*>(buffer.data()), packetSize);
         try {
             createSendFileRequest(me.getClientID(), encryptedSize, originalSize, packet, totalPackets, transfer->getFile(), encrypted).send(*socket);
