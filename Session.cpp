@@ -71,12 +71,6 @@ void Session::session() {
     std::cout << "Client CRC: " << clientCRC << std::endl;
     int tries = 0;
     while(serverCRC != clientCRC) {
-        try {
-            createCRCFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
-        } catch(std::exception& e) {
-            std::cerr << "Error: failed to send CRC failed request to the server!" << std::endl;
-            return;
-        }
         if(tries == 3) {
             std::cerr << "Error: server's CRC doesn't match client's CRC after 3 tries! File transfer failed." << std::endl;
             try {
@@ -91,7 +85,14 @@ void Session::session() {
             std::cout << "Server received file transfer failed. Disconnecting from server." << std::endl;
             return;
         }
+        try {
+            createCRCFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
+        } catch(std::exception& e) {
+            std::cerr << "Error: failed to send CRC failed request to the server!" << std::endl;
+            return;
+        }
         std::cout << "Warning: server's CRC doesn't match client's CRC! Retrying file transfer." << std::endl;
+        std::cout << "Retry number " << tries + 1 << " of 3." << std::endl;
         if(!sendFile(aesKey))
             return;
         response = getResponse();
