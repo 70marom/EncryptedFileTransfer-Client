@@ -18,22 +18,28 @@ Session::Session(tcp::socket& socket, TransferFile& transfer) {
 void Session::session() {
     std::string aesKey;
     std::vector<uint8_t> response;
+    bool loginFailed = false;
     if(me.getExists()) {
         if(!loginClient())
             return;
         response = getResponse();
         if(response.empty())
             return;
-        std::string privateKey = getPrivateKey();
-        if(privateKey.empty())
-            return;
-        privateKey = Base64::decode(privateKey);
-        RSAKeys rsa(privateKey);
-        std::string aesKeyEncrypted(response.begin() + 16, response.end());
-        aesKey = rsa.decrypt(aesKeyEncrypted);
-        std::cout << "Received AES key from the server and decrypted it." << std::endl;
+
+        if(response.size() == 1 && response.at(0) == 0)
+            loginFailed = true;
+        else {
+            std::string privateKey = getPrivateKey();
+            if(privateKey.empty())
+                return;
+            privateKey = Base64::decode(privateKey);
+            RSAKeys rsa(privateKey);
+            std::string aesKeyEncrypted(response.begin() + 16, response.end());
+            aesKey = rsa.decrypt(aesKeyEncrypted);
+            std::cout << "Received AES key from the server and decrypted it." << std::endl;
+        }
     }
-    else {
+    if(!me.getExists() || loginFailed) {
         if(!registerClient())
             return;
         response = getResponse();
@@ -132,8 +138,12 @@ std::vector<uint8_t> Session::getResponse() {
         std::cerr << "Error: failed to get response from the server!" << std::endl;
         return {};
     }
-    if(!processResponse(header))
-        return {};
+    if(!processResponse(header)) {
+        std::vector<uint8_t> loginFailedVector;
+        loginFailedVector.push_back(0);
+        return loginFailedVector;
+    }
+
     return payload;
 }
 
