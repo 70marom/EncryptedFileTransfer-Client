@@ -16,8 +16,6 @@ Session::Session(tcp::socket& socket, TransferFile& transfer) {
 }
 
 void Session::session() {
-    std::string aesKey;
-    std::vector<uint8_t> response;
     bool loginFailed = false;
     if(me.getExists()) {
         if(!loginClient())
@@ -29,14 +27,9 @@ void Session::session() {
         if(response.size() == 1 && response.at(0) == 0)
             loginFailed = true;
         else {
-            std::string privateKey = getPrivateKey();
-            if(privateKey.empty())
+            handleLoginResponse();
+            if(aesKey.empty())
                 return;
-            privateKey = Base64::decode(privateKey);
-            RSAKeys rsa(privateKey);
-            std::string aesKeyEncrypted(response.begin() + 16, response.end());
-            aesKey = rsa.decrypt(aesKeyEncrypted);
-            std::cout << "Received AES key from the server and decrypted it." << std::endl;
         }
     }
     if(!me.getExists() || loginFailed) {
@@ -45,81 +38,19 @@ void Session::session() {
         response = getResponse();
         if(response.empty())
             return;
-        if(!me.createMeFile(transfer->getName(), response))
-             return;
-        RSAKeys rsa;
-        std::cout << "Generated RSA public and private keys." << std::endl;
-        std::string privateKeyBase64 = Base64::encode(rsa.getPrivateKey());
-        if(!createPrivateKeyFile(privateKeyBase64))
+        if(!handleRegisterResponse())
             return;
-        privateKeyBase64.erase(std::remove(privateKeyBase64.begin(), privateKeyBase64.end(), '\n'), privateKeyBase64.end());
-        if(!me.writePrivateKey(privateKeyBase64))
-            return;
-        if(!sendPublicKey(rsa.getPublicKey()))
-            return;
-        response = getResponse();
-        if(response.empty())
-            return;
-        std::string aesKeyEncrypted(response.begin() + 16, response.end());
-        aesKey = rsa.decrypt(aesKeyEncrypted);
     }
-    if(!sendFile(aesKey))
+    int tries = fileTransferProcess();
+    if(tries == -1)
         return;
-    response = getResponse();
-    if(response.empty())
-        return;
-    // get CRC from response, little endian last 4 bytes of response
-    uint32_t serverCRC = response[response.size() - 4] | (response[response.size() - 3] << 8) | (response[response.size() - 2] << 16) | (response[response.size() - 1] << 24);
-    unsigned long clientCRC = fileCRC(transfer->getFile());
-    if(clientCRC == -1)
-        return;
-    std::cout << "Server CRC: " << serverCRC << std::endl;
-    std::cout << "Client CRC: " << clientCRC << std::endl;
-    int tries = 0;
-    while(serverCRC != clientCRC) {
-        if(tries == 3) {
-            std::cerr << "Error: server's CRC doesn't match client's CRC after 3 tries! File transfer failed." << std::endl;
-            try {
-                createFileTransferFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
-            } catch(std::exception& e) {
-                std::cerr << "Error: failed to send file transfer failed request to the server!" << std::endl;
-                return;
-            }
-            response = getResponse();
-            if(response.empty())
-                return;
-            std::cout << "Server received file transfer failed. Disconnecting from server." << std::endl;
-            return;
-        }
-        try {
-            createCRCFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
-        } catch(std::exception& e) {
-            std::cerr << "Error: failed to send CRC failed request to the server!" << std::endl;
-            return;
-        }
-        std::cout << "Warning: server's CRC doesn't match client's CRC! Retrying file transfer." << std::endl;
-        std::cout << "Retry number " << tries + 1 << " of 3." << std::endl;
-        if(!sendFile(aesKey))
-            return;
-        response = getResponse();
-        if(response.empty())
-            return;
-        serverCRC = response[response.size() - 4] | (response[response.size() - 3] << 8) | (response[response.size() - 2] << 16) | (response[response.size() - 1] << 24);
-        tries++;
-        std::cout << "Server CRC: " << serverCRC << std::endl;
-        std::cout << "Client CRC: " << clientCRC << std::endl;
-    }
-    std::cout << "Server's CRC matches client's CRC! File transfer succeeded." << std::endl;
-    try {
-        createFileTransferSucceededRequest(me.getClientID(), transfer->getFile()).send(*socket);
-    } catch(std::exception& e) {
-        std::cerr << "Error: failed to send file transfer succeeded message to the server!" << std::endl;
+
+    if(tries == 4) {
+        fileTransferFailed();
         return;
     }
-    response = getResponse();
-    if(response.empty())
-        return;
-    std::cout << "Server received confirmation of file transfer successful. Disconnecting from server." << std::endl;
+
+    fileTransferSucceeded();
 }
 
 std::vector<uint8_t> Session::getResponse() {
@@ -145,6 +76,38 @@ std::vector<uint8_t> Session::getResponse() {
     }
 
     return payload;
+}
+
+void Session::handleLoginResponse() {
+    std::string privateKey = getPrivateKey();
+    if (privateKey.empty())
+        return;
+    privateKey = Base64::decode(privateKey);
+    RSAKeys rsa(privateKey);
+    std::string aesKeyEncrypted(response.begin() + 16, response.end());
+    aesKey = rsa.decrypt(aesKeyEncrypted);
+    std::cout << "Received AES key from the server and decrypted it." << std::endl;
+}
+
+bool Session::handleRegisterResponse() {
+    if(!me.createMeFile(transfer->getName(), response))
+        return false;
+    RSAKeys rsa;
+    std::cout << "Generated RSA public and private keys." << std::endl;
+    std::string privateKeyBase64 = Base64::encode(rsa.getPrivateKey());
+    if(!createPrivateKeyFile(privateKeyBase64))
+        return false;
+    privateKeyBase64.erase(std::remove(privateKeyBase64.begin(), privateKeyBase64.end(), '\n'), privateKeyBase64.end());
+    if(!me.writePrivateKey(privateKeyBase64))
+        return false;
+    if(!sendPublicKey(rsa.getPublicKey()))
+        return false;
+    response = getResponse();
+    if(response.empty())
+        return false;
+    std::string aesKeyEncrypted(response.begin() + 16, response.end());
+    aesKey = rsa.decrypt(aesKeyEncrypted);
+    return true;
 }
 
 
@@ -190,7 +153,7 @@ bool Session::sendPublicKey(const std::string& publicKey) {
     return true;
 }
 
-bool Session::sendFile(const std::string& aesKey) {
+bool Session::sendFile() {
     if(transfer->getFile().empty()) {
         std::cerr << "Error: no file in transfer.info! Can't send file." << std::endl;
         return false;
@@ -242,4 +205,67 @@ bool Session::sendFile(const std::string& aesKey) {
     }
     std::cout << "Finished sending file " << transfer->getFile() << " to the server." << std::endl;
     return true;
+}
+
+int Session::fileTransferProcess() {
+    int tries = 0;
+    do {
+        if(!sendFile())
+            return -1;
+        response = getResponse();
+        if(response.empty())
+            return -1;
+
+        uint32_t serverCRC = response[response.size() - 4] | (response[response.size() - 3] << 8) | (response[response.size() - 2] << 16) | (response[response.size() - 1] << 24);
+        unsigned long clientCRC = fileCRC(transfer->getFile());
+        if(clientCRC == -1)
+            return -1;
+
+        std::cout << "Server CRC: " << serverCRC << std::endl;
+        std::cout << "Client CRC: " << clientCRC << std::endl;
+
+        if(clientCRC == serverCRC)
+            break;
+
+        std::cout << "Warning: server's CRC doesn't match client's CRC!" << std::endl;
+        if(tries < 3)
+            std::cout << "Retrying file transfer. Retry number " << tries + 1 << " of 4." << std::endl;
+        try {
+            createCRCFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
+        } catch(std::exception& e) {
+            std::cerr << "Error: failed to send CRC failed request to the server!" << std::endl;
+            return -1;
+        }
+
+        tries++;
+    } while(tries <= 3);
+    return tries;
+}
+
+void Session::fileTransferFailed() {
+    std::cerr << "Error: server's CRC doesn't match client's CRC after 4 tries! File transfer failed." << std::endl;
+    try {
+        createFileTransferFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
+    } catch(std::exception& e) {
+        std::cerr << "Error: failed to send file transfer failed request to the server!" << std::endl;
+        return;
+    }
+    response = getResponse();
+    if(response.empty())
+        return;
+    std::cout << "Server received file transfer failed message. Disconnecting from server." << std::endl;
+}
+
+void Session::fileTransferSucceeded() {
+    std::cout << "Server's CRC matches client's CRC! File transfer succeeded." << std::endl;
+    try {
+        createFileTransferSucceededRequest(me.getClientID(), transfer->getFile()).send(*socket);
+    } catch(std::exception& e) {
+        std::cerr << "Error: failed to send file transfer succeeded message to the server!" << std::endl;
+        return;
+    }
+    response = getResponse();
+    if(response.empty())
+        return;
+    std::cout << "Server received confirmation of file transfer successful. Disconnecting from server." << std::endl;
 }

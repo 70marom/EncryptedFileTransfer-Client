@@ -11,15 +11,22 @@ class Session {
     tcp::socket* socket;
     TransferFile* transfer;
     MeFile me;
+    std::vector<uint8_t> response;
+    std::string aesKey;
 public:
     Session(tcp::socket& socket, TransferFile& transfer);
     void session();
 private:
     std::vector<uint8_t> getResponse();
+    void handleLoginResponse();
+    bool handleRegisterResponse();
     bool registerClient();
     bool loginClient();
     bool sendPublicKey(const std::string& publicKey);
-    bool sendFile(const std::string& aesKey);
+    bool sendFile();
+    int fileTransferProcess();
+    void fileTransferFailed();
+    void fileTransferSucceeded();
 };
 
 #endif //SESSION_H

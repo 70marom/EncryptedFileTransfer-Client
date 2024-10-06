@@ -5,7 +5,7 @@
 #include <iostream>
 
 MeFile::MeFile() {
-    std::ifstream me("me.info");
+    std::ifstream me("me.info"); // open me.info file to read
     if(me.is_open()) {
         std::getline(me, name);
         std::getline(me, clientID);
@@ -13,7 +13,7 @@ MeFile::MeFile() {
         me.close();
         exists = true;
     }
-    else {
+    else { // if me.info doesn't exist or failed to open it, set all fields to empty
         name = "";
         clientID = "";
         privateKey = "";
@@ -38,10 +38,10 @@ bool MeFile::getExists() {
 }
 
 bool MeFile::createMeFile(std::string name, std::vector<uint8_t> uuid) {
-    std::ofstream me("me.info");
+    std::ofstream me("me.info"); // create me.info file
     if(me.is_open()) {
         me << name << std::endl;
-        std::string uuidString = binaryToHexAscii(uuid);
+        std::string uuidString = binaryToHexAscii(uuid); // convert UUID to string in hexadecimal
         for(const char ch : uuidString) {
             me << ch;
             clientID += ch;
@@ -53,16 +53,16 @@ bool MeFile::createMeFile(std::string name, std::vector<uint8_t> uuid) {
         std::cout << "me.info file created with your UUID." << std::endl;;
         return true;
     }
-    else {
+    else { // if failed to create me.info file
         std::cerr << "Error: failed to create me.info file!" << std::endl;
         return false;
     }
 }
 
 bool MeFile::writePrivateKey(const std::string& privateKey) {
-    std::ofstream me("me.info", std::ios_base::app);
+    std::ofstream me("me.info", std::ios_base::app); // open me.info file to append private key
     if(me.is_open()) {
-        me << privateKey;
+        me << privateKey; // append private key to me.info
         me.close();
         this->privateKey = privateKey;
         return true;
