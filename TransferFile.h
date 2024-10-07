@@ -2,6 +2,8 @@
 #define TRANSFERFILE_H
 #include <string>
 
+const size_t PACKET_SIZE = 1024;
+
 class TransferFile {
     std::string address;
     std::string port;

@@ -17,17 +17,17 @@ Session::Session(tcp::socket& socket, TransferFile& transfer) {
 
 void Session::session() {
     bool loginFailed = false;
-    if(me.getExists()) {
+    if(me.getExists()) { // if me.info exists, try to login
         if(!loginClient())
             return;
         response = getResponse();
         if(response.empty())
             return;
 
-        if(response.size() == 1 && response.at(0) == 0)
+        if(response.size() == 1 && response.at(0) == 0) // server failed to login client
             loginFailed = true;
         else {
-            handleLoginResponse();
+            handleLoginResponse(); // server sent AES key
             if(aesKey.empty())
                 return;
         }
@@ -41,72 +41,75 @@ void Session::session() {
         if(!handleRegisterResponse())
             return;
     }
-    int tries = fileTransferProcess();
+    int tries = fileTransferProcess(); // send file to server and save number of tries
     if(tries == -1)
         return;
 
-    if(tries == 4) {
+    if(tries == 4) { // if file transfer failed after 4 tries, send file transfer failed message to server
         fileTransferFailed();
         return;
     }
 
-    fileTransferSucceeded();
+    fileTransferSucceeded(); // if file transfer succeeded, send file transfer succeeded message to server
 }
 
 std::vector<uint8_t> Session::getResponse() {
-    uint8_t header[7];
+    uint8_t header[7]; // 1 byte for version, 2 bytes for code and 4 bytes for payload size
     try {
         boost::asio::read(*socket, boost::asio::buffer(header, sizeof(header)));
     } catch(std::exception& e) {
         std::cerr << "Error: failed to get response from the server!" << std::endl;
         return {};
     }
-    int payloadSize = header[3] | (header[4] << 8) | (header[5] << 16) | (header[6] << 24);
+    int payloadSize = header[3] | (header[4] << 8) | (header[5] << 16) | (header[6] << 24); // extract in little endian
     std::vector<uint8_t> payload(payloadSize);
-    try {
+    try { // read payload
         boost::asio::read(*socket, boost::asio::buffer(payload.data(), payloadSize));
     } catch(std::exception& e) {
         std::cerr << "Error: failed to get response from the server!" << std::endl;
         return {};
     }
     if(!processResponse(header)) {
-        std::vector<uint8_t> loginFailedVector;
-        loginFailedVector.push_back(0);
-        return loginFailedVector;
+        if(header[1] | (header[2] << 8) == LOGIN_FAILED) { // server failed to login client
+            std::vector<uint8_t> loginFailedVector;
+            loginFailedVector.push_back(0);
+            return loginFailedVector; // return this vector to identify login failure and a registration is needed
+        }
+        return {};
     }
 
     return payload;
 }
 
 void Session::handleLoginResponse() {
-    std::string privateKey = getPrivateKey();
+    std::string privateKey = getPrivateKey(); // get private key from file priv.key
     if (privateKey.empty())
         return;
     privateKey = Base64::decode(privateKey);
     RSAKeys rsa(privateKey);
-    std::string aesKeyEncrypted(response.begin() + 16, response.end());
-    aesKey = rsa.decrypt(aesKeyEncrypted);
+    std::string aesKeyEncrypted(response.begin() + 16, response.end()); // extract AES key from response
+    aesKey = rsa.decrypt(aesKeyEncrypted); // decrypt AES key with private key
     std::cout << "Received AES key from the server and decrypted it." << std::endl;
 }
 
 bool Session::handleRegisterResponse() {
     if(!me.createMeFile(transfer->getName(), response))
         return false;
-    RSAKeys rsa;
+    RSAKeys rsa; // generate RSA keys
     std::cout << "Generated RSA public and private keys." << std::endl;
     std::string privateKeyBase64 = Base64::encode(rsa.getPrivateKey());
-    if(!createPrivateKeyFile(privateKeyBase64))
+    if(!createPrivateKeyFile(privateKeyBase64)) // save private key to file priv.key
         return false;
     privateKeyBase64.erase(std::remove(privateKeyBase64.begin(), privateKeyBase64.end(), '\n'), privateKeyBase64.end());
-    if(!me.writePrivateKey(privateKeyBase64))
+    if(!me.writePrivateKey(privateKeyBase64)) // save private key to me.info
         return false;
-    if(!sendPublicKey(rsa.getPublicKey()))
+    if(!sendPublicKey(rsa.getPublicKey())) // send public key to server
         return false;
     response = getResponse();
     if(response.empty())
         return false;
-    std::string aesKeyEncrypted(response.begin() + 16, response.end());
-    aesKey = rsa.decrypt(aesKeyEncrypted);
+    std::string aesKeyEncrypted(response.begin() + 16, response.end()); // extract AES key from response
+    aesKey = rsa.decrypt(aesKeyEncrypted); // decrypt AES key with private key
     return true;
 }
 
@@ -116,7 +119,7 @@ bool Session::registerClient() {
         std::cerr << "Error: no name in transfer.info! Can't register." << std::endl;
         return false;
     }
-    try {
+    try { // send register request
         createRegisterRequest(transfer->getName()).send(*socket);
     } catch(std::exception& e) {
         std::cerr << "Error: failed to send register request!" << std::endl;
@@ -134,7 +137,7 @@ bool Session::loginClient() {
         std::cerr << "Error: no ID in me.info! Can't login." << std::endl;
         return false;
     }
-    try {
+    try { // send login request
         createLoginRequest(me.getName(), me.getClientID()).send(*socket);
     } catch(std::exception& e) {
         std::cerr << "Error: failed to send login request!" << std::endl;
@@ -162,39 +165,37 @@ bool Session::sendFile() {
         std::cerr << "Error: file name " << transfer->getFile() << " is too long (more than 255 characters)! Can't send file." << std::endl;
         return false;
     }
-    if(!std::filesystem::exists(transfer->getFile())) {
+    if(!std::filesystem::exists(transfer->getFile())) { // check if file exists
         std::cerr << "Error: file " << transfer->getFile() << " doesn't exist! Can't send file." << std::endl;
         return false;
     }
 
-    std::ifstream file(transfer->getFile(), std::ios::binary);
+    std::ifstream file(transfer->getFile(), std::ios::binary); // open file in binary mode
     if(!file.is_open()) {
         std::cerr << "Error: failed to open file " << transfer->getFile() << "! Can't send file." << std::endl;
         return false;
     }
 
-    uintmax_t originalSize = std::filesystem::file_size(transfer->getFile());
-    if(originalSize > std::numeric_limits<uint32_t>::max()) {
+    uintmax_t originalSize = std::filesystem::file_size(transfer->getFile()); // get file size in bytes
+    if(originalSize > std::numeric_limits<uint32_t>::max()) { // check if file is too large for the protocol (4 bytes to store the size)
         std::cerr << "Error: file " << transfer->getFile() << " is too large (more than 4GB)! Can't send file." << std::endl;
         return false;
     }
 
-    uint32_t encryptedSize = originalSize + 16 - (originalSize % 16);
+    uint32_t encryptedSize = originalSize + 16 - (originalSize % 16); // calculate size of encrypted file
     AESKey aes(reinterpret_cast<const unsigned char*>(aesKey.c_str()), aesKey.length());
 
-    const size_t packetSize = 1024;
-    std::vector<uint8_t> buffer(packetSize);
-    uint16_t totalPackets = (encryptedSize + packetSize - 1) / packetSize;
+    std::vector<uint8_t> buffer(PACKET_SIZE);
+    uint16_t totalPackets = (encryptedSize + PACKET_SIZE - 1) / PACKET_SIZE; // calculate total number of packets needed to send the file
 
     std::cout << "Sending file " << transfer->getFile() << " to the server in " << totalPackets << " packets." << std::endl;
     for(uint16_t packet = 1; packet <= totalPackets; packet++) {
-        file.read(reinterpret_cast<char*>(buffer.data()), packetSize);
-        std::streamsize bytesRead = file.gcount();
-        if (bytesRead < packetSize) {
-            std::fill(buffer.begin() + bytesRead, buffer.end(), 0);  // Zero padding
-        }
-
-        std::string encrypted = aes.encrypt(reinterpret_cast<const char*>(buffer.data()), packetSize);
+        file.read(reinterpret_cast<char*>(buffer.data()), PACKET_SIZE); // read PACKET_SIZE bytes from file
+        std::streamsize bytesRead = file.gcount(); // get number of bytes read
+        if (bytesRead < PACKET_SIZE) // if less than PACKET_SIZE bytes were read, fill the rest with zeros
+            std::fill(buffer.begin() + bytesRead, buffer.end(), 0);
+        // encrypt the buffer using AES key and send it to the server
+        std::string encrypted = aes.encrypt(reinterpret_cast<const char*>(buffer.data()), PACKET_SIZE);
         try {
             createSendFileRequest(me.getClientID(), encryptedSize, originalSize, packet, totalPackets, transfer->getFile(), encrypted).send(*socket);
         } catch(std::exception& e) {
@@ -215,18 +216,18 @@ int Session::fileTransferProcess() {
         response = getResponse();
         if(response.empty())
             return -1;
-
+        // extract server's CRC from response, stored in little endian
         uint32_t serverCRC = response[response.size() - 4] | (response[response.size() - 3] << 8) | (response[response.size() - 2] << 16) | (response[response.size() - 1] << 24);
-        unsigned long clientCRC = fileCRC(transfer->getFile());
+        unsigned long clientCRC = fileCRC(transfer->getFile()); // calculate the file's CRC on the client side
         if(clientCRC == -1)
             return -1;
 
         std::cout << "Server CRC: " << serverCRC << std::endl;
         std::cout << "Client CRC: " << clientCRC << std::endl;
 
-        if(clientCRC == serverCRC)
+        if(clientCRC == serverCRC) // if server's CRC matches client's CRC, break the loop
             break;
-
+        // if server's CRC doesn't match client's CRC, send a CRC failed request to the server
         std::cout << "Warning: server's CRC doesn't match client's CRC!" << std::endl;
         if(tries < 3)
             std::cout << "Retrying file transfer. Retry number " << tries + 1 << " of 4." << std::endl;
@@ -238,7 +239,7 @@ int Session::fileTransferProcess() {
         }
 
         tries++;
-    } while(tries <= 3);
+    } while(tries <= 3); // try up to 4 times to send the file to the server
     return tries;
 }
 
