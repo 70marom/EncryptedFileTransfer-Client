@@ -1,4 +1,4 @@
-#include "cksum.h"
+#include "CRC.h"
 #include <iostream>
 #include <fstream>
 #include <ostream>

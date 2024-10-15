@@ -12,10 +12,6 @@ RSAKeys::RSAKeys(const std::string& key)
 	_privateKey.Load(ss);
 }
 
-RSAKeys::~RSAKeys()
-{
-}
-
 std::string RSAKeys::getPrivateKey() const
 {
 	std::string key;

@@ -2,35 +2,35 @@
 #include "util.h"
 #include <iostream>
 
-bool processResponse(uint8_t* header) {
+ResponseStatus processResponse(uint8_t* header) {
     int code = header[1] | (header[2] << 8);
     switch(code) {
         case REGISTRATION_SUCCESS:
             std::cout << "Registration in server is successful!" << std::endl;
-            return true;
+            return SUCCESS;
         case REGISTRATION_FAILED:
             std::cerr << "Error: server failed to register client! Name might have been taken." << std::endl;
-            return false;
+            return FAILURE;
         case PUBLIC_KEY_RECEIVED:
             std::cout << "AES key has been received from server." << std::endl;
-            return true;
+            return SUCCESS;
         case FILE_RECEIVED:
             std::cout << "CRC for sent file has been received from server." << std::endl;
-            return true;
+            return SUCCESS;
         case CONFIRMATION:
-            return true;
+            return SUCCESS;
         case LOGIN_SUCCESS:
             std::cout << "Login in server is successful!" << std::endl;
-            return true;
+            return SUCCESS;
         case LOGIN_FAILED:
             std::cerr << "Error: failed to login in server! A registration is needed." << std::endl;
-            return false;
+            return REGISTRATION_REQUIRED;
         case SERVER_ERROR:
             std::cerr << "Error: server responded with an error!" << std::endl;
-            return false;
+            return GENERAL_ERROR;
         default:
             std::cerr << "Error: unknown response code " << code << " received from server!" << std::endl;
-            return false;
+            return FAILURE;
     }
 }
 

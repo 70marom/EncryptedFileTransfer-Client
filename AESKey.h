@@ -12,7 +12,6 @@ private:
 	AESKey(const AESKey& aes);
 public:
 	AESKey(const unsigned char* key, unsigned int size);
-	~AESKey();
 
 	const unsigned char* getKey() const;
 

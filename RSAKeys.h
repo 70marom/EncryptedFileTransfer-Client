@@ -19,7 +19,6 @@ private:
 public:
 	RSAKeys();
 	RSAKeys(const std::string& key);
-	~RSAKeys();
 
 	std::string getPrivateKey() const;
 	std::string getPublicKey() const;

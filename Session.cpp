@@ -8,7 +8,7 @@
 #include "AESKey.h"
 #include "Base64.h"
 #include "util.h"
-#include "cksum.h"
+#include "CRC.h"
 
 Session::Session(tcp::socket& socket, TransferFile& transfer) {
     this->socket = &socket;
@@ -57,7 +57,7 @@ std::vector<uint8_t> Session::getResponse() {
     uint8_t header[7]; // 1 byte for version, 2 bytes for code and 4 bytes for payload size
     try {
         boost::asio::read(*socket, boost::asio::buffer(header, sizeof(header)));
-    } catch(std::exception& e) {
+    } catch(std::exception&) {
         std::cerr << "Error: failed to get response from the server!" << std::endl;
         return {};
     }
@@ -65,19 +65,19 @@ std::vector<uint8_t> Session::getResponse() {
     std::vector<uint8_t> payload(payloadSize);
     try { // read payload
         boost::asio::read(*socket, boost::asio::buffer(payload.data(), payloadSize));
-    } catch(std::exception& e) {
+    } catch(std::exception&) {
         std::cerr << "Error: failed to get response from the server!" << std::endl;
         return {};
     }
-    if(!processResponse(header)) {
-        if(header[1] | (header[2] << 8) == LOGIN_FAILED) { // server failed to login client
-            std::vector<uint8_t> loginFailedVector;
-            loginFailedVector.push_back(0);
-            return loginFailedVector; // return this vector to identify login failure and a registration is needed
-        }
-        return {};
-    }
 
+    ResponseStatus status = processResponse(header);
+    if(status == REGISTRATION_REQUIRED) {
+        std::vector<uint8_t> loginFailedVector;
+        loginFailedVector.push_back(0);
+        return loginFailedVector; // return this vector to identify login failure and a registration is needed
+    }
+    if(status == FAILURE)
+        return {};
     return payload;
 }
 
@@ -121,7 +121,7 @@ bool Session::registerClient() {
     }
     try { // send register request
         createRegisterRequest(transfer->getName()).send(*socket);
-    } catch(std::exception& e) {
+    } catch(std::exception&) {
         std::cerr << "Error: failed to send register request!" << std::endl;
         return false;
     }
@@ -139,7 +139,7 @@ bool Session::loginClient() {
     }
     try { // send login request
         createLoginRequest(me.getName(), me.getClientID()).send(*socket);
-    } catch(std::exception& e) {
+    } catch(std::exception&) {
         std::cerr << "Error: failed to send login request!" << std::endl;
         return false;
     }
@@ -149,7 +149,7 @@ bool Session::loginClient() {
 bool Session::sendPublicKey(const std::string& publicKey) {
     try {
         createPublicKeyRequest(me.getName(), me.getClientID(), publicKey).send(*socket);
-    } catch(std::exception& e) {
+    } catch(std::exception&) {
         std::cerr << "Error: failed to send public key to the server!" << std::endl;
         return false;
     }
@@ -198,12 +198,14 @@ bool Session::sendFile() {
         std::string encrypted = aes.encrypt(reinterpret_cast<const char*>(buffer.data()), PACKET_SIZE);
         try {
             createSendFileRequest(me.getClientID(), encryptedSize, originalSize, packet, totalPackets, transfer->getFile(), encrypted).send(*socket);
-        } catch(std::exception& e) {
+        } catch(std::exception&) {
             std::cerr << "Error: failed to send file " << transfer->getFile() << " to the server!" << std::endl;
+            file.close();
             return false;
         }
         std::cout << "Sent packet " << packet << " of " << totalPackets << " to the server." << std::endl;
     }
+    file.close();
     std::cout << "Finished sending file " << transfer->getFile() << " to the server." << std::endl;
     return true;
 }
@@ -233,7 +235,7 @@ int Session::fileTransferProcess() {
             std::cout << "Retrying file transfer. Retry number " << tries + 1 << " of 4." << std::endl;
         try {
             createCRCFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
-        } catch(std::exception& e) {
+        } catch(std::exception&) {
             std::cerr << "Error: failed to send CRC failed request to the server!" << std::endl;
             return -1;
         }
@@ -247,7 +249,7 @@ void Session::fileTransferFailed() {
     std::cerr << "Error: server's CRC doesn't match client's CRC after 4 tries! File transfer failed." << std::endl;
     try {
         createFileTransferFailedRequest(me.getClientID(), transfer->getFile()).send(*socket);
-    } catch(std::exception& e) {
+    } catch(std::exception&) {
         std::cerr << "Error: failed to send file transfer failed request to the server!" << std::endl;
         return;
     }
@@ -261,7 +263,7 @@ void Session::fileTransferSucceeded() {
     std::cout << "Server's CRC matches client's CRC! File transfer succeeded." << std::endl;
     try {
         createFileTransferSucceededRequest(me.getClientID(), transfer->getFile()).send(*socket);
-    } catch(std::exception& e) {
+    } catch(std::exception&) {
         std::cerr << "Error: failed to send file transfer succeeded message to the server!" << std::endl;
         return;
     }

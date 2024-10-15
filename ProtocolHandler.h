@@ -26,7 +26,14 @@ enum RequestCode {
     FILE_TRANSFER_FAILED = 902
 };
 
-bool processResponse(uint8_t* header);
+enum ResponseStatus {
+    FAILURE = 0,
+    SUCCESS = 1,
+    GENERAL_ERROR = 2,
+    REGISTRATION_REQUIRED = 3
+};
+
+ResponseStatus processResponse(uint8_t* header);
 Request createRegisterRequest(const std::string &name);
 Request createLoginRequest(const std::string &name, const std::string& clientID);
 Request createPublicKeyRequest(const std::string &name, const std::string& clientID, const std::string &publicKey);

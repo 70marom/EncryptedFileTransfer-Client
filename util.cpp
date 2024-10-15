@@ -14,7 +14,7 @@ std::string binaryToHexAscii(const std::vector<uint8_t>& data) {
 
 void hexStringToByteArray(const std::string& hexString, uint8_t* byteArray) {
     for (size_t i = 0; i < hexString.length(); i += 2) {
-        // convert each byte in the hex string (2 characters) to a uint8_t and store in the byte array
+        // convert each byte in the hex string (2 characters) to an uint8_t and store in the byte array
         std::string byteString = hexString.substr(i, 2);
         byteArray[i / 2] = static_cast<uint8_t>(strtol(byteString.c_str(), nullptr, 16));
     }

@@ -13,10 +13,6 @@ AESKey::AESKey(const unsigned char* key, unsigned int length)
 	memcpy_s(_key, DEFAULT_KEYLENGTH, key, length);
 }
 
-AESKey::~AESKey()
-{
-}
-
 const unsigned char* AESKey::getKey() const
 { 
 	return _key; 
